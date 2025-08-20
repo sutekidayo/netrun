@@ -39,6 +39,14 @@ RUN cp /opt/netrun/bin/*.cgi /var/www/html/netrun/ && \
 # Copy support directory for builds
 RUN cp -r /opt/netrun/support /var/www/html/netrun/
 
+# Set up NetRun directories
+RUN mkdir -p /opt/netrun/run && \
+    mkdir -p /var/www/html/netrun/run && \
+    chown -R www-data:www-data /opt/netrun/run /var/www/html/netrun/run
+
+# Copy custom configuration if available
+COPY config/config.pl /var/www/html/netrun/config.pl
+
 # Configure Apache for NetRun
 RUN echo '<Directory "/var/www/html/netrun">' >> /etc/apache2/sites-available/000-default.conf && \
     echo '    Options +ExecCGI' >> /etc/apache2/sites-available/000-default.conf && \

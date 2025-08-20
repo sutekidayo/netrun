@@ -61,6 +61,12 @@ RUN cp /opt/netrun/serve/sandrun_export/perm.sh /home/netrun/ && \
     chmod +x /home/netrun/*.sh && \
     chown netrun:nogroup /home/netrun/sandserv* /home/netrun/*.sh
 
+# Copy additional scripts
+COPY kill_gdb.sh /home/netrun/kill_gdb.sh
+COPY netrun_start.sh /home/netrun/netrun_start.sh
+RUN chmod +x /home/netrun/kill_gdb.sh /home/netrun/netrun_start.sh && \
+    chown netrun:nogroup /home/netrun/kill_gdb.sh /home/netrun/netrun_start.sh
+
 # Setup sandbox directories and permissions
 USER netrun
 WORKDIR /home/netrun
@@ -70,7 +76,7 @@ RUN ./perm.sh
 USER root
 RUN echo '#!/bin/bash' > /start.sh && \
     echo 'cd /home/netrun' >> /start.sh && \
-    echo 'su netrun -c "./sandserv.sh &"' >> /start.sh && \
+    echo 'su netrun -c "./netrun_start.sh &"' >> /start.sh && \
     echo 'exec "$@"' >> /start.sh && \
     chmod +x /start.sh
 
