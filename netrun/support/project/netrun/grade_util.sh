@@ -192,7 +192,7 @@ double_secret() {
 grade_multiple_choice() {
 	echo "<hr><h2>Multiple Choice Grading</h2>"
 	
-	if [ -z "$student_answer" ]; then
+	if [ -z "$STUDENT_ANSWER" ]; then
 		echo '<TABLE><TR><TD CLASS="error">'
 		echo "No answer selected. Please select an answer and try again."
 		echo '</TD></TR></TABLE>'
@@ -203,7 +203,7 @@ grade_multiple_choice() {
 	IFS=',' read -ra CORRECT_ARRAY <<< "$correct_answers"
 	for correct in "${CORRECT_ARRAY[@]}"; do
 		correct=$(echo $correct | sed 's/[[:space:]]//g') # Remove whitespace
-		if [ "$student_answer" = "$correct" ]; then
+		if [ "$STUDENT_ANSWER" = "$correct" ]; then
 			echo '<TABLE><TR><TD CLASS="success" STYLE="color:#FFFFFF" GRADEVAL="@<YES!>&">'
 			echo "Correct! Well done."
 			echo '</TD></TR></TABLE>'
