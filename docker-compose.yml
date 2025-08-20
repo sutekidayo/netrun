@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  netrun-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.webserver
+    container_name: netrun-web
+    ports:
+      - "8080:80"
+    volumes:
+      - netrun-data:/home/netrun
+      - ./config:/opt/netrun/config:ro
+    environment:
+      - NETRUN_BACKEND_HOST=netrun-runner
+      - NETRUN_BACKEND_PORT=9922
+    depends_on:
+      - netrun-runner
+    networks:
+      - netrun-network
+
+  netrun-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    container_name: netrun-runner
+    volumes:
+      - netrun-data:/home/netrun
+    environment:
+      - NETRUN_PORT=9922
+    networks:
+      - netrun-network
+    # Privileged mode needed for sandboxing
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - SYS_CHROOT
+      - SETUID
+      - SETGID
+
+volumes:
+  netrun-data:
+
+networks:
+  netrun-network:
+    driver: bridge
