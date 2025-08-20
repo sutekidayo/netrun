@@ -267,6 +267,20 @@ function startupCode() {
 	updateLanguage();
 }
 
+// Toggle between code and multiple choice problem types
+function toggleProblemType(type) {
+	var codeFields = document.getElementById('code_fields');
+	var mcFields = document.getElementById('mc_fields');
+	
+	if (type === 'multiple_choice') {
+		codeFields.style.display = 'none';
+		mcFields.style.display = 'block';
+	} else {
+		codeFields.style.display = 'block';
+		mcFields.style.display = 'none';
+	}
+}
+
 //]]></script>
 
 <style type='text/css' media='screen'>
@@ -574,6 +588,61 @@ sub param_to_cgiarg {
 }
 
 
+# Display multiple choice question to student
+sub print_multiple_choice_question {
+	my $question = $q->param('mc_question') || 'No question specified';
+	
+	print "<br><strong>Multiple Choice Question:</strong><br>\n";
+	print "<div style='margin: 10px; padding: 10px; border: 1px solid #ccc;'>\n";
+	print "$question<br><br>\n";
+	
+	# Get options and randomize if requested
+	my @options = ();
+	my @option_nums = ();
+	for my $i (1..6) {
+		my $option = $q->param("mc_option_$i");
+		if ($option && $option ne '') {
+			push @options, $option;
+			push @option_nums, $i;
+		}
+	}
+	
+	# Randomize option order if requested
+	if ($q->param('mc_randomize') && scalar(@options) > 1) {
+		# Use student name as seed for consistent randomization
+		my $name = $q->param('name') || '';
+		my $hwnum = $q->param('hwnum') || '';
+		my $seed = perlhash($name . $hwnum);
+		srand($seed);
+		
+		# Fisher-Yates shuffle
+		for my $i (reverse 1..$#options) {
+			my $j = int(rand($i + 1));
+			($options[$i], $options[$j]) = ($options[$j], $options[$i]);
+			($option_nums[$i], $option_nums[$j]) = ($option_nums[$j], $option_nums[$i]);
+		}
+	}
+	
+	# Display options as radio buttons or checkboxes
+	my $correct_answers = $q->param('mc_correct') || '1';
+	my @correct_list = split(/,/, $correct_answers);
+	my $is_multiple = scalar(@correct_list) > 1;
+	
+	print "<div id='mc_options'>\n";
+	for my $i (0..$#options) {
+		my $option_text = $options[$i];
+		my $option_value = $option_nums[$i];
+		my $input_type = $is_multiple ? 'checkbox' : 'radio';
+		
+		print "<label style='display: block; margin: 5px 0;'>\n";
+		print "<input type='$input_type' name='student_answer' value='$option_value'> ";
+		print "$option_text</label>\n";
+	}
+	print "</div>\n";
+	
+	print "</div>\n";
+}
+
 ########################### main_form ##############################
 sub print_main_form {
 	print
@@ -603,13 +672,25 @@ sub print_main_form {
 
 			open(GRD,">$hwfile.grd") or err("Cannot create $hwfile.grd");
 			print GRD "#!/bin/sh\n. netrun/grade_util.sh\n\n";
-                        my $i=1;
-			while ($q->param("gradeout$i") && length($q->param("gradeout$i"))>0) {
-				print GRD "in='".untaint_singlequote($q->param("gradein$i"))."'\n";
-				print GRD "out='".untaint_singlequote($q->param("gradeout$i"))."'\n";
-				print GRD "grade_prog\n\n";
-				$i=$i+1;
-			} 
+			
+			# Check if this is a multiple choice question
+			if ($q->param('problem_type') && $q->param('problem_type') eq 'multiple_choice') {
+				# Generate multiple choice grading script
+				my $correct_answers = $q->param('mc_correct') || '1';
+				print GRD "# Multiple choice question grading\n";
+				print GRD "correct_answers='$correct_answers'\n";
+				print GRD "student_answer=\"\$STUDENT_ANSWER\"\n";
+				print GRD "grade_multiple_choice\n";
+			} else {
+				# Generate traditional code grading script
+				my $i=1;
+				while ($q->param("gradeout$i") && length($q->param("gradeout$i"))>0) {
+					print GRD "in='".untaint_singlequote($q->param("gradein$i"))."'\n";
+					print GRD "out='".untaint_singlequote($q->param("gradeout$i"))."'\n";
+					print GRD "grade_prog\n\n";
+					$i=$i+1;
+				}
+			}
 			print GRD "grade_done\n";
                         close GRD;
 			chmod 0755,"$hwfile.grd"
@@ -632,6 +713,39 @@ sub print_main_form {
 				-onkeydown=>"javascript:return InsertTab(this,event);", 
 				-onkeypress=>"javascript:return EatTab(this,event);", 
 				-default=>"For this problem, you should...");
+		
+		# Problem type selector
+		print "<br>Problem Type:<br>\n",
+			$q->radio_group(-name=>'problem_type',
+				-values=>['code','multiple_choice'],
+				-labels=>{'code'=>'Code Problem', 'multiple_choice'=>'Multiple Choice Question'},
+				-default=>'code',
+				-onclick=>"javascript:toggleProblemType(this.value);"),"\n";
+		
+		# Multiple choice question fields (initially hidden)
+		print "<div id='mc_fields' style='display:none;'>";
+		print "<br>Question Text:<br>\n",
+			$q->textarea(-name=>'mc_question',-columns=>85,-rows=>3,
+				-onkeydown=>"javascript:return InsertTab(this,event);", 
+				-onkeypress=>"javascript:return EatTab(this,event);",
+				-default=>"What is the correct answer?");
+		
+		# Answer options (start with 4 options)
+		for my $i (1..6) {
+			print "<br>Option $i:<br>\n",
+				$q->textfield(-name=>"mc_option_$i",-size=>60);
+		}
+		
+		print "<br>Correct Answer(s) (option numbers, comma-separated):<br>\n",
+			$q->textfield(-name=>'mc_correct',-size=>30,-default=>'1');
+		
+		print "<br>",
+			$q->checkbox(-name=>'mc_randomize',-label=>'Randomize option order',-checked=>1);
+		
+		print "</div>";
+		
+		# Code problem fields (default visible)
+		print "<div id='code_fields'>";
 		print "<br>Grading prefix code:<br>\n",
 			$q->textarea(-name=>'gradecode',-columns=>85,-rows=>3,
 				-onkeydown=>"javascript:return InsertTab(this,event);", 
@@ -645,6 +759,7 @@ sub print_main_form {
 			$q->textarea(-name=>'gradepost',-columns=>85,-rows=>3,
 				-onkeydown=>"javascript:return InsertTab(this,event);", 
 				-onkeypress=>"javascript:return EatTab(this,event);");
+		print "</div>"; # Close code_fields div
 		
 	} else {
 		# Preserve the hidden homework fields...
@@ -652,6 +767,20 @@ sub print_main_form {
 		if ($q->param('gradecode')) {print $q->hidden('gradecode',$q->param('gradecode'));}
 		if ($q->param('gradepost')) {print $q->hidden('gradepost',$q->param('gradepost'));}
 		
+		# Preserve multiple choice fields
+		if ($q->param('problem_type')) {print $q->hidden('problem_type',$q->param('problem_type'));}
+		if ($q->param('mc_question')) {print $q->hidden('mc_question',$q->param('mc_question'));}
+		if ($q->param('mc_correct')) {print $q->hidden('mc_correct',$q->param('mc_correct'));}
+		if ($q->param('mc_randomize')) {print $q->hidden('mc_randomize',$q->param('mc_randomize'));}
+		for my $i (1..6) {
+			if ($q->param("mc_option_$i")) {print $q->hidden("mc_option_$i",$q->param("mc_option_$i"));}
+		}
+		
+		# Show appropriate interface based on problem type
+		if ($q->param('problem_type') && $q->param('problem_type') eq 'multiple_choice') {
+			# Display multiple choice question for student
+			print_multiple_choice_question();
+		} else {
 		# Format the code area
 		my $numrows=3;
 		if ($q->param('code')) {
@@ -666,6 +795,7 @@ sub print_main_form {
 				-onkeydown=>"javascript:return InsertTab(this,event);", 
 				-onkeypress=>"javascript:return EatTab(this,event);" 
 			),"\n";
+		} # End code interface else clause
 	}
 	my $ace_support=<<'END_ACE';
 <!-- Ace editor support: -->
