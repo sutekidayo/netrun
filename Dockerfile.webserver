@@ -1,0 +1,69 @@
+FROM ubuntu:22.04
+
+# Install Apache, Perl, and dependencies
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        apache2 \
+        libapache2-mod-perl2 \
+        perl \
+        libcgi-pm-perl \
+        libdigest-sha-perl \
+        netcat-openbsd \
+        make \
+        g++ \
+        && rm -rf /var/lib/apt/lists/*
+
+# Enable CGI module
+RUN a2enmod cgi perl
+
+# Create netrun user and directories
+RUN useradd -c "NetRun user" -g www-data -m netrun && \
+    mkdir -p /var/www/html/netrun && \
+    mkdir -p /home/netrun/run && \
+    chown -R netrun:www-data /home/netrun
+
+# Copy NetRun files
+COPY netrun/ /opt/netrun/
+COPY www/ /var/www/html/
+
+# Build sandsend for communication with backend
+WORKDIR /opt/netrun/serve/sandrun_export
+RUN make clean && make sandsend && cp sandsend /usr/local/bin/
+
+# Copy CGI scripts and set permissions
+RUN cp /opt/netrun/bin/*.cgi /var/www/html/netrun/ && \
+    cp /opt/netrun/bin/*.pl /var/www/html/netrun/ && \
+    chmod +x /var/www/html/netrun/*.cgi && \
+    chown -R www-data:www-data /var/www/html/netrun/
+
+# Copy support directory for builds
+RUN cp -r /opt/netrun/support /var/www/html/netrun/
+
+# Set up NetRun directories
+RUN mkdir -p /opt/netrun/run && \
+    mkdir -p /var/www/html/netrun/run && \
+    chown -R www-data:www-data /opt/netrun/run /var/www/html/netrun/run
+
+# Copy custom configuration if available
+COPY config/config.pl /var/www/html/netrun/config.pl
+
+# Configure Apache for NetRun
+RUN echo '<Directory "/var/www/html/netrun">' >> /etc/apache2/sites-available/000-default.conf && \
+    echo '    Options +ExecCGI' >> /etc/apache2/sites-available/000-default.conf && \
+    echo '    AddHandler cgi-script .cgi' >> /etc/apache2/sites-available/000-default.conf && \
+    echo '    AllowOverride All' >> /etc/apache2/sites-available/000-default.conf && \
+    echo '</Directory>' >> /etc/apache2/sites-available/000-default.conf
+
+# Set environment variables for NetRun
+ENV NETRUN_RUN_DIR=/opt/netrun
+ENV NETRUN_BACKEND_HOST=netrun-runner
+ENV NETRUN_BACKEND_PORT=9922
+
+# Set working directory for CGI scripts
+WORKDIR /var/www/html/netrun
+
+# Expose HTTP port
+EXPOSE 80
+
+# Start Apache in foreground
+CMD ["apache2ctl", "-D", "FOREGROUND"]

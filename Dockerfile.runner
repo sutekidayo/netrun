@@ -1,0 +1,88 @@
+FROM ubuntu:22.04
+
+# Install compilers and runtime dependencies
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        # C/C++ toolchain
+        gcc \
+        g++ \
+        make \
+        gdb \
+        # Assembly tools
+        nasm \
+        yasm \
+        binutils \
+        # Python
+        python3 \
+        python3-pip \
+        # Rust
+        curl \
+        # General tools
+        netcat-openbsd \
+        openssh-server \
+        sudo \
+        coreutils \
+        procps \
+        && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    echo 'source $HOME/.cargo/env' >> ~/.bashrc
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Create netrun user with same UID as web container
+RUN useradd -c "NetRun user" -g nogroup -m -u 1001 netrun && \
+    usermod -aG sudo netrun && \
+    echo "netrun ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Create execution user for sandboxing (high UID for security)
+RUN useradd -u 6661313 -g nogroup -M netrunexec
+
+# Copy NetRun backend components
+COPY netrun/serve/ /opt/netrun/serve/
+COPY netrun/support/ /opt/netrun/support/
+
+# Build sandbox components
+WORKDIR /opt/netrun/serve/sandrun_export
+RUN make clean && make
+
+WORKDIR /opt/netrun/serve/s4g_chroot
+RUN make clean && make && make install
+
+# Set up netrun environment
+RUN mkdir -p /home/netrun/run && \
+    chown -R netrun:nogroup /home/netrun && \
+    chmod 755 /home/netrun
+
+# Copy scripts and set permissions
+RUN cp /opt/netrun/serve/sandrun_export/perm.sh /home/netrun/ && \
+    cp /opt/netrun/serve/sandrun_export/sandserv.sh /home/netrun/ && \
+    cp /opt/netrun/serve/sandrun_export/sandserv /home/netrun/ && \
+    chmod +x /home/netrun/*.sh && \
+    chown netrun:nogroup /home/netrun/sandserv* /home/netrun/*.sh
+
+# Copy additional scripts
+COPY kill_gdb.sh /home/netrun/kill_gdb.sh
+COPY netrun_start.sh /home/netrun/netrun_start.sh
+RUN chmod +x /home/netrun/kill_gdb.sh /home/netrun/netrun_start.sh && \
+    chown netrun:nogroup /home/netrun/kill_gdb.sh /home/netrun/netrun_start.sh
+
+# Setup sandbox directories and permissions
+USER netrun
+WORKDIR /home/netrun
+RUN ./perm.sh
+
+# Create startup script
+USER root
+RUN echo '#!/bin/bash' > /start.sh && \
+    echo 'cd /home/netrun' >> /start.sh && \
+    echo 'su netrun -c "./netrun_start.sh &"' >> /start.sh && \
+    echo 'exec "$@"' >> /start.sh && \
+    chmod +x /start.sh
+
+# Expose sandbox communication port
+EXPOSE 9922
+
+# Start the sandbox server
+ENTRYPOINT ["/start.sh"]
+CMD ["tail", "-f", "/home/netrun/sandserv.log"]
