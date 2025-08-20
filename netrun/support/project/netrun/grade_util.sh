@@ -188,6 +188,36 @@ double_secret() {
 }
 
 
+# Grade a multiple choice question
+grade_multiple_choice() {
+	echo "<hr><h2>Multiple Choice Grading</h2>"
+	
+	if [ -z "$STUDENT_ANSWER" ]; then
+		echo '<TABLE><TR><TD CLASS="error">'
+		echo "No answer selected. Please select an answer and try again."
+		echo '</TD></TR></TABLE>'
+		exit 1
+	fi
+	
+	# Check if student answer matches any of the correct answers
+	IFS=',' read -ra CORRECT_ARRAY <<< "$correct_answers"
+	for correct in "${CORRECT_ARRAY[@]}"; do
+		correct=$(echo $correct | sed 's/[[:space:]]//g') # Remove whitespace
+		if [ "$STUDENT_ANSWER" = "$correct" ]; then
+			echo '<TABLE><TR><TD CLASS="success" STYLE="color:#FFFFFF" GRADEVAL="@<YES!>&">'
+			echo "Correct! Well done."
+			echo '</TD></TR></TABLE>'
+			return 0
+		fi
+	done
+	
+	# Student answer is incorrect
+	echo '<TABLE><TR><TD CLASS="error">'
+	echo "Incorrect answer. Please try again."
+	echo '</TD></TR></TABLE>'
+	exit 1
+}
+
 # Finished grading--all tests passed!
 grade_done() {
 	# The good "GRADEVAL" argument is found by netrun, and stored for grading.
